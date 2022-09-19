@@ -548,6 +548,17 @@ suite('Link computer', () => {
 		assertLinksEqual(links, []);
 	});
 
+	test('Should handle page links', async () => {
+		const links = await getLinksForText(joinLines(
+			`[[test]]`,
+			`something [[else]]`,
+		));
+		assertLinksEqual(links, [
+			makeRange(0, 2, 0, 6),
+			makeRange(1, 12, 1, 16),
+		]);
+	});
+
 	test('Should return uri of inner document', async () => {
 		const subScheme = 'sub-doc';
 		const parentUri = workspacePath('test.md');

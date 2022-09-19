@@ -306,7 +306,7 @@ const referenceLinkPattern = new RegExp(
 	/****/r`(` +
 	/******/r`[^\]]*?)\]` + //link def
 	/******/r`|` +
-	/******/r`\[\s*?([^\s\\\]]*?)\])(?![\:\(])` +
+	/******/r`\[\s*?([^\s\\\]]*?)\])(?![\:\(\]])` +
 	r`)`,
 	'gm');
 
@@ -315,6 +315,8 @@ const referenceLinkPattern = new RegExp(
  */
 const autoLinkPattern = /\<(\w+:[^\>\s]+)\>/g;
 
+
+const pageLinkPattern = /!?\[\[(([^\]#\|]*)(#[^\|\]]+)*(\|[^\]]*)*)\]\]/gm;
 /**
  * Matches `[text]: link`
  */
@@ -404,6 +406,7 @@ export class MdLinkComputer {
 		const inlineLinks = Array.from(this.getInlineLinks(document, noLinkRanges));
 		return Array.from([
 			...inlineLinks,
+			...this.getPageLinks(document, noLinkRanges.concatInline(inlineLinks.map(x => x.source.range))),
 			...this.getReferenceLinks(document, noLinkRanges.concatInline(inlineLinks.map(x => x.source.range))),
 			...this.getLinkDefinitions(document, noLinkRanges),
 			...this.getAutoLinks(document, noLinkRanges),
@@ -466,6 +469,8 @@ export class MdLinkComputer {
 	private *getReferenceLinks(document: ITextDocument, noLinkRanges: NoLinkRanges): Iterable<MdLink> {
 		const text = document.getText();
 		for (const match of text.matchAll(referenceLinkPattern)) {
+			console.log("in reference")
+			console.log(match);
 			const linkStartOffset = (match.index ?? 0) + match[1].length;
 			const linkStart = document.positionAt(linkStartOffset);
 			if (noLinkRanges.contains(linkStart)) {
@@ -530,6 +535,46 @@ export class MdLinkComputer {
 					kind: HrefKind.Reference,
 					ref: reference,
 				}
+			};
+		}
+	}
+
+	private *getPageLinks(document: ITextDocument, noLinkRanges: NoLinkRanges): Iterable<MdLinkDefinition> {
+		const text = document.getText();
+		const docUri = URI.parse(document.uri);
+		for (const match of text.matchAll(pageLinkPattern)) {
+			const offset = (match.index ?? 0);
+			const linkStart = document.positionAt(offset);
+			if (noLinkRanges.contains(linkStart)) {
+				continue;
+			}
+
+			console.log(match);
+
+			const linkName = match[1];
+
+			const target = createHref(docUri, linkName, this.workspace);
+			if (!target) {
+				continue;
+			}
+
+			const hrefStart = translatePosition(linkStart, { characterDelta: 2 });
+			const hrefEnd = translatePosition(hrefStart, { characterDelta: linkName.length });
+			const hrefRange = { start: hrefStart, end: hrefEnd };
+
+			const linkEnd = translatePosition(linkStart, { characterDelta: match[0].length });
+			yield {
+				kind: MdLinkKind.Definition,
+				source: {
+					hrefText: linkName,
+					resource: docUri,
+					range: { start: linkStart, end: linkEnd },
+					targetRange: hrefRange,
+					hrefRange,
+					...getLinkSourceFragmentInfo(document, linkName, hrefStart, hrefEnd),
+				},
+				ref: { text: linkName, range: hrefRange },
+				href: target,
 			};
 		}
 	}
